@@ -1,0 +1,105 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model CaseRecord {
+  id        String        @id
+  status    String
+  priority  String
+  version   Int           @default(1)
+  updatedAt DateTime      @updatedAt @map("updated_at")
+  comments  CaseComment[]
+
+  @@map("case_records")
+}
+
+model CaseComment {
+  id        String     @id @default(uuid())
+  caseId    String     @map("case_id")
+  author    String
+  body      String
+  createdAt DateTime   @default(now()) @map("created_at")
+  case      CaseRecord @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId, createdAt])
+  @@map("case_comments")
+}
+
+model IdempotencyRecord {
+  id             String   @id @default(uuid())
+  idempotencyKey String   @map("idempotency_key")
+  method         String
+  path           String
+  actorSub       String   @map("actor_sub")
+  requestHash    String   @map("request_hash")
+  statusCode     Int      @map("status_code")
+  responseBody   Json     @map("response_body")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@unique([idempotencyKey, method, path, actorSub])
+  @@map("idempotency_records")
+}
+
+model AuditLog {
+  id            String   @id @default(uuid())
+  correlationId String   @map("correlation_id")
+  actorSub      String   @map("actor_sub")
+  agentId       String?  @map("agent_id")
+  action        String
+  resourceType  String   @map("resource_type")
+  resourceId    String   @map("resource_id")
+  scopes        String[]
+  outcome       String
+  metadata      Json
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([resourceType, resourceId, createdAt])
+  @@index([actorSub, createdAt])
+  @@map("audit_logs")
+}
+
+model WebhookSubscription {
+  id        String          @id @default(uuid())
+  eventType String          @map("event_type")
+  targetUrl String          @map("target_url")
+  secret    String
+  active    Boolean         @default(true)
+  createdAt DateTime        @default(now()) @map("created_at")
+  outbox    WebhookOutbox[]
+
+  @@index([eventType, active])
+  @@map("webhook_subscriptions")
+}
+
+model WebhookOutbox {
+  id             String              @id @default(uuid())
+  subscriptionId String              @map("subscription_id")
+  eventType      String              @map("event_type")
+  payload        Json
+  status         String              @default("pending")
+  attempts       Int                 @default(0)
+  nextAttemptAt  DateTime            @default(now()) @map("next_attempt_at")
+  lastError      String?             @map("last_error")
+  createdAt      DateTime            @default(now()) @map("created_at")
+  deliveredAt    DateTime?           @map("delivered_at")
+  subscription   WebhookSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextAttemptAt])
+  @@map("webhook_outbox")
+}
+
+model UsageMetric {
+  accountId   String @map("account_id")
+  month       String
+  protectedTb Float  @map("protected_tb")
+  apiCalls    Int    @map("api_calls")
+  activeUsers Int    @map("active_users")
+
+  @@id([accountId, month])
+  @@map("usage_metrics")
+}

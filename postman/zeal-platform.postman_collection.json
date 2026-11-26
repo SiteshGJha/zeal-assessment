@@ -1,0 +1,146 @@
+{
+  "info": {
+    "name": "Zeal Customer Entitlement & Support Case Platform",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "End-to-end API verification collection covering health, customer aggregation, ARR redaction, fault injection, case pagination, idempotent comments, optimistic concurrency escalation, and webhook subscriptions."
+  },
+  "item": [
+    {
+      "name": "01 - Health Check (Public)",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/health"
+      }
+    },
+    {
+      "name": "02 - Get Customer (Redacted ARR - support:read)",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{supportToken}}" }
+        ],
+        "url": "{{baseUrl}}/v1/customers/ACC-77"
+      }
+    },
+    {
+      "name": "03 - Get Customer (Full ARR - finance:read)",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{financeToken}}" }
+        ],
+        "url": "{{baseUrl}}/v1/customers/ACC-007"
+      }
+    },
+    {
+      "name": "04 - Get Customer (Degraded Warehouse Timeout)",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{financeToken}}" },
+          { "key": "X-Fault-Inject", "value": "snowflake=timeout" }
+        ],
+        "url": "{{baseUrl}}/v1/customers/ACC-007"
+      }
+    },
+    {
+      "name": "05 - List Open Aged Cases (Cursor Pagination)",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{supportToken}}" }
+        ],
+        "url": "{{baseUrl}}/v1/cases?status=open&minAgeHours=48&sort=priority:desc&limit=10"
+      }
+    },
+    {
+      "name": "06 - Add Case Comment (Idempotent)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{writeToken}}" },
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Idempotency-Key", "value": "postman-comment-001" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"body\": \"Investigating storage snapshot latency on primary cluster.\"\n}"
+        },
+        "url": "{{baseUrl}}/v1/cases/CS-10231/comments"
+      }
+    },
+    {
+      "name": "07 - Add Case Comment (409 Hash Conflict)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{writeToken}}" },
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Idempotency-Key", "value": "postman-comment-001" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"body\": \"Conflicting body reusing same key.\"\n}"
+        },
+        "url": "{{baseUrl}}/v1/cases/CS-10231/comments"
+      }
+    },
+    {
+      "name": "08 - Escalate Case (If-Match Optimistic Lock)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{writeToken}}" },
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "If-Match", "value": "\"v1\"" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"reason\": \"Open P2 case exceeding 48h SLA for Gold customer\",\n  \"targetPriority\": \"P1\"\n}"
+        },
+        "url": "{{baseUrl}}/v1/cases/CS-10232/escalate"
+      }
+    },
+    {
+      "name": "09 - Escalate Case (412 Stale ETag)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{writeToken}}" },
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "If-Match", "value": "\"v0\"" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"reason\": \"Expected 412 precondition failed\"\n}"
+        },
+        "url": "{{baseUrl}}/v1/cases/CS-10232/escalate"
+      }
+    },
+    {
+      "name": "10 - Register Webhook Subscription",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{writeToken}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"targetUrl\": \"http://127.0.0.1:3000/internal/webhook-receiver\",\n  \"eventType\": \"case.escalated\",\n  \"secret\": \"dev-webhook-secret-123456\"\n}"
+        },
+        "url": "{{baseUrl}}/v1/webhooks/subscriptions"
+      }
+    },
+    {
+      "name": "11 - Inspect Verified Webhook Deliveries",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{supportToken}}" }
+        ],
+        "url": "{{baseUrl}}/internal/webhook-deliveries"
+      }
+    }
+  ]
+}

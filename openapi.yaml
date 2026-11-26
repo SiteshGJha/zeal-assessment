@@ -1,0 +1,743 @@
+openapi: 3.1.0
+info:
+  title: Customer Entitlement & Support Case Platform API
+  version: 1.0.0
+  description: >
+    Contract-first REST platform API aggregating support cases (Salesforce),
+    customer entitlements (NetSuite CSV/XML), and product usage (Snowflake SQL)
+    for HTTP workflow clients and AI agents.
+servers:
+  - url: http://127.0.0.1:3000
+    description: Local development server
+
+security:
+  - bearerAuth: []
+
+paths:
+  /v1/customers/{id}:
+    get:
+      operationId: getCustomer
+      summary: Get aggregated customer entitlement and product usage summary
+      security:
+        - bearerAuth: ["support:read"]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+        - name: includeUsage
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: true
+        - $ref: "#/components/parameters/CorrelationIdHeader"
+      responses:
+        "200":
+          description: Aggregated customer view (degraded flag true if warehouse fails)
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
+            RateLimit-Limit:
+              $ref: "#/components/headers/RateLimitLimit"
+            RateLimit-Remaining:
+              $ref: "#/components/headers/RateLimitRemaining"
+            RateLimit-Reset:
+              $ref: "#/components/headers/RateLimitReset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomerAggregate"
+        "401":
+          $ref: "#/components/responses/UnauthorizedProblem"
+        "403":
+          $ref: "#/components/responses/ForbiddenProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "429":
+          $ref: "#/components/responses/RateLimitProblem"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableProblem"
+
+  /v1/cases:
+    get:
+      operationId: listCases
+      summary: Search, filter, sort, and cursor-paginate support cases
+      security:
+        - bearerAuth: ["support:read"]
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["open", "escalated", "closed"]
+        - name: priority
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["P1", "P2", "P3"]
+        - name: accountId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: minAgeHours
+          in: query
+          required: false
+          schema:
+            type: number
+            minimum: 0
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["openedAt:asc", "openedAt:desc", "priority:asc", "priority:desc"]
+            default: "openedAt:desc"
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - $ref: "#/components/parameters/CorrelationIdHeader"
+      responses:
+        "200":
+          description: Paginated support cases
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
+            RateLimit-Limit:
+              $ref: "#/components/headers/RateLimitLimit"
+            RateLimit-Remaining:
+              $ref: "#/components/headers/RateLimitRemaining"
+            RateLimit-Reset:
+              $ref: "#/components/headers/RateLimitReset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaseListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "401":
+          $ref: "#/components/responses/UnauthorizedProblem"
+        "403":
+          $ref: "#/components/responses/ForbiddenProblem"
+        "422":
+          $ref: "#/components/responses/UnprocessableProblem"
+        "429":
+          $ref: "#/components/responses/RateLimitProblem"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableProblem"
+
+  /v1/cases/{id}/comments:
+    post:
+      operationId: addCaseComment
+      summary: Idempotently create a comment on a support case
+      security:
+        - bearerAuth: ["support:write"]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - $ref: "#/components/parameters/CorrelationIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCommentRequest"
+      responses:
+        "201":
+          description: Comment created or replayed idempotently
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
+            Idempotent-Replayed:
+              description: Present and set to "true" when replayed from idempotency store
+              schema:
+                type: string
+                enum: ["true"]
+            RateLimit-Limit:
+              $ref: "#/components/headers/RateLimitLimit"
+            RateLimit-Remaining:
+              $ref: "#/components/headers/RateLimitRemaining"
+            RateLimit-Reset:
+              $ref: "#/components/headers/RateLimitReset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaseCommentDto"
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "401":
+          $ref: "#/components/responses/UnauthorizedProblem"
+        "403":
+          $ref: "#/components/responses/ForbiddenProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "409":
+          $ref: "#/components/responses/ConflictProblem"
+        "422":
+          $ref: "#/components/responses/UnprocessableProblem"
+        "429":
+          $ref: "#/components/responses/RateLimitProblem"
+
+  /v1/cases/{id}/escalate:
+    post:
+      operationId: escalateCase
+      summary: Escalate an open support case with optimistic concurrency and business rules
+      security:
+        - bearerAuth: ["support:write"]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+        - name: If-Match
+          in: header
+          required: true
+          schema:
+            type: string
+            pattern: '^"v[0-9]+"$'
+        - $ref: "#/components/parameters/CorrelationIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EscalateCaseRequest"
+      responses:
+        "200":
+          description: Case escalated and outbox webhook event enqueued
+          headers:
+            ETag:
+              description: Updated strong ETag
+              schema:
+                type: string
+                pattern: '^"v[0-9]+"$'
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
+            RateLimit-Limit:
+              $ref: "#/components/headers/RateLimitLimit"
+            RateLimit-Remaining:
+              $ref: "#/components/headers/RateLimitRemaining"
+            RateLimit-Reset:
+              $ref: "#/components/headers/RateLimitReset"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaseDto"
+        "401":
+          $ref: "#/components/responses/UnauthorizedProblem"
+        "403":
+          $ref: "#/components/responses/ForbiddenProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "412":
+          $ref: "#/components/responses/PreconditionFailedProblem"
+        "422":
+          $ref: "#/components/responses/UnprocessableProblem"
+        "428":
+          $ref: "#/components/responses/PreconditionRequiredProblem"
+        "429":
+          $ref: "#/components/responses/RateLimitProblem"
+
+  /v1/webhooks/subscriptions:
+    post:
+      operationId: createWebhookSubscription
+      summary: Register a webhook subscription for case escalation events
+      security:
+        - bearerAuth: ["support:write"]
+      parameters:
+        - $ref: "#/components/parameters/CorrelationIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWebhookSubscriptionRequest"
+      responses:
+        "201":
+          description: Webhook subscription created
+          headers:
+            X-Correlation-ID:
+              $ref: "#/components/headers/CorrelationId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookSubscriptionDto"
+        "401":
+          $ref: "#/components/responses/UnauthorizedProblem"
+        "403":
+          $ref: "#/components/responses/ForbiddenProblem"
+        "422":
+          $ref: "#/components/responses/UnprocessableProblem"
+        "429":
+          $ref: "#/components/responses/RateLimitProblem"
+
+webhooks:
+  caseEscalated:
+    post:
+      summary: Emitted when a support case transitions to escalated status
+      parameters:
+        - name: X-Webhook-Event
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: ["case.escalated"]
+        - name: X-Webhook-Id
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: X-Signature-Timestamp
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: X-Signature-SHA256
+          in: header
+          required: true
+          schema:
+            type: string
+            pattern: '^sha256=[a-f0-9]{64}$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CaseEscalatedWebhookPayload"
+      responses:
+        "200":
+          description: Webhook delivery acknowledged
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    CorrelationIdHeader:
+      name: X-Correlation-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        maxLength: 64
+
+  headers:
+    CorrelationId:
+      schema:
+        type: string
+    RateLimitLimit:
+      schema:
+        type: string
+    RateLimitRemaining:
+      schema:
+        type: string
+    RateLimitReset:
+      schema:
+        type: string
+    RetryAfter:
+      schema:
+        type: string
+
+  responses:
+    BadRequestProblem:
+      description: Malformed request or missing required header
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+    UnauthorizedProblem:
+      description: Missing or invalid bearer JWT
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+    ForbiddenProblem:
+      description: Insufficient OAuth scopes
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+    NotFoundProblem:
+      description: Requested resource was not found
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+    ConflictProblem:
+      description: Idempotency key reused with a different request payload
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+    PreconditionFailedProblem:
+      description: Stale or invalid ETag in If-Match header
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+    UnprocessableProblem:
+      description: Schema validation or domain business-rule error
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+    PreconditionRequiredProblem:
+      description: Missing required If-Match header
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+    RateLimitProblem:
+      description: Rate limit exceeded
+      headers:
+        Retry-After:
+          $ref: "#/components/headers/RetryAfter"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+    ServiceUnavailableProblem:
+      description: Required upstream system unavailable
+      headers:
+        Retry-After:
+          $ref: "#/components/headers/RetryAfter"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+
+  schemas:
+    ProblemDetails:
+      type: object
+      additionalProperties: false
+      required:
+        - type
+        - title
+        - status
+        - detail
+        - instance
+        - correlationId
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+        correlationId:
+          type: string
+        errors:
+          type: array
+          items:
+            type: object
+            required:
+              - field
+              - message
+            properties:
+              field:
+                type: string
+              message:
+                type: string
+
+    UsageSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - month
+        - protectedTb
+        - apiCalls
+        - activeUsers
+      properties:
+        month:
+          type: string
+        protectedTb:
+          type: number
+        apiCalls:
+          type: integer
+        activeUsers:
+          type: integer
+
+    CustomerAggregate:
+      type: object
+      additionalProperties: false
+      required:
+        - accountId
+        - name
+        - supportTier
+        - renewalDate
+        - daysUntilRenewal
+        - arrUsd
+        - redactedFields
+        - usage
+        - degraded
+        - degradedReasons
+      properties:
+        accountId:
+          type: string
+        name:
+          type: string
+        supportTier:
+          type: string
+          enum: ["Platinum", "Gold", "Silver"]
+        renewalDate:
+          type: string
+          format: date
+        daysUntilRenewal:
+          type: integer
+        arrUsd:
+          type: ["number", "null"]
+        redactedFields:
+          type: array
+          items:
+            type: string
+        usage:
+          oneOf:
+            - $ref: "#/components/schemas/UsageSummary"
+            - type: "null"
+        degraded:
+          type: boolean
+        degradedReasons:
+          type: array
+          items:
+            type: string
+
+    CaseCommentDto:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - caseId
+        - author
+        - body
+        - createdAt
+      properties:
+        id:
+          type: string
+        caseId:
+          type: string
+        author:
+          type: string
+        body:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    CaseCommentSummaryDto:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - author
+        - body
+        - createdAt
+      properties:
+        id:
+          type: string
+        author:
+          type: string
+        body:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    CaseDto:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - accountId
+        - priority
+        - status
+        - openedAt
+        - subject
+        - etag
+        - comments
+      properties:
+        id:
+          type: string
+        accountId:
+          type: string
+        priority:
+          type: string
+          enum: ["P1", "P2", "P3"]
+        status:
+          type: string
+          enum: ["open", "escalated", "closed"]
+        openedAt:
+          type: string
+          format: date-time
+        subject:
+          type: string
+        etag:
+          type: string
+          pattern: '^v[0-9]+$'
+        comments:
+          type: array
+          items:
+            $ref: "#/components/schemas/CaseCommentSummaryDto"
+
+    CaseListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - nextCursor
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CaseDto"
+        nextCursor:
+          type: ["string", "null"]
+
+    CreateCommentRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - body
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 1000
+
+    EscalateCaseRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - reason
+      properties:
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 500
+        targetPriority:
+          type: string
+          enum: ["P1", "P2"]
+          default: "P1"
+
+    CreateWebhookSubscriptionRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - targetUrl
+        - eventType
+        - secret
+      properties:
+        targetUrl:
+          type: string
+          format: uri
+        eventType:
+          type: string
+          enum: ["case.escalated"]
+        secret:
+          type: string
+          minLength: 16
+          maxLength: 128
+
+    WebhookSubscriptionDto:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - targetUrl
+        - eventType
+        - active
+        - createdAt
+      properties:
+        id:
+          type: string
+        targetUrl:
+          type: string
+        eventType:
+          type: string
+          enum: ["case.escalated"]
+        active:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    CaseEscalatedWebhookPayload:
+      type: object
+      additionalProperties: false
+      required:
+        - eventId
+        - eventType
+        - occurredAt
+        - data
+      properties:
+        eventId:
+          type: string
+        eventType:
+          type: string
+          enum: ["case.escalated"]
+        occurredAt:
+          type: string
+          format: date-time
+        data:
+          type: object
+          additionalProperties: false
+          required:
+            - caseId
+            - accountId
+            - previousPriority
+            - newPriority
+            - status
+            - reason
+            - actorSub
+          properties:
+            caseId:
+              type: string
+            accountId:
+              type: string
+            previousPriority:
+              type: string
+              enum: ["P1", "P2", "P3"]
+            newPriority:
+              type: string
+              enum: ["P1", "P2"]
+            status:
+              type: string
+              enum: ["escalated"]
+            reason:
+              type: string
+            actorSub:
+              type: string

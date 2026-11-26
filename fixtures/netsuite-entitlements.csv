@@ -1,0 +1,5 @@
+account_id,name,support_tier,contract_end,arr_usd
+ACC-77,Acme Corp,Platinum,{{NOW_PLUS_30D}},480000
+ACC-008,Beacon Health,Gold,{{NOW_PLUS_60D}},185000
+ACC-009,Cedar Labs,Silver,{{NOW_PLUS_120D}},42000
+ACC-010,Delta Systems,Platinum,{{NOW_PLUS_150D}},620000

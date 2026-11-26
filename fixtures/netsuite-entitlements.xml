@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<accounts>
+  <account id="ACC-007">
+    <tier>Platinum</tier>
+    <renewal>{{NOW_PLUS_30D}}</renewal>
+  </account>
+  <account id="ACC-008">
+    <tier>Gold</tier>
+    <renewal>{{NOW_PLUS_60D}}</renewal>
+  </account>
+  <account id="ACC-009">
+    <tier>Silver</tier>
+    <renewal>{{NOW_PLUS_120D}}</renewal>
+  </account>
+  <account id="ACC-010">
+    <tier>Platinum</tier>
+    <renewal>{{NOW_PLUS_150D}}</renewal>
+  </account>
+</accounts>
