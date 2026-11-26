@@ -114,6 +114,8 @@ MCP_USER_JWT="$WRITE_JWT" npm run mcp:start
 See [mcp/demo/transcript.md](./mcp/demo/transcript.md) for a recorded execution transcript and documented guardrail fix.
 
 ## Project Deliverables & Documentation
+- Architecture & Diagrams: [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)
+- Technical & Operations Guide: [docs/TECHNICAL_GUIDE.md](./docs/TECHNICAL_GUIDE.md)
 - API Contract: [openapi.yaml](./openapi.yaml)
 - Design Decisions & Trade-offs: [DECISIONS.md](./DECISIONS.md)
 - Security & Threat Controls: [SECURITY.md](./SECURITY.md)

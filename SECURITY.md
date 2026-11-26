@@ -30,7 +30,7 @@ Implemented in `mcp/guardrails.ts` and `mcp/server.ts`:
 
 ## 5. Webhook Integrity & SSRF Prevention
 - **HMAC-SHA256 Signing (`WebhooksService` & `WebhookOutboxWorker`)**: Signs `${timestamp}.${rawBody}` with the subscription secret and transmits `X-Signature-Timestamp`, `X-Signature-SHA256: sha256=<hex>`, `X-Webhook-Event`, and `X-Webhook-Id`. `POST /internal/webhook-receiver` enforces constant-time `crypto.timingSafeEqual` verification and a 5-minute timestamp replay window.
-- **SSRF Validation (`assertSafeWebhookUrl`)**: Always requires `http:`/`https:` (HTTPS-only when `NODE_ENV=production`) and rejects `localhost`, `127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16` metadata ranges, and IPv6 ULA/link-local addresses whenever `NODE_ENV=production` or `WEBHOOK_ALLOW_PRIVATE_TARGETS=false`.
+- **SSRF Validation (`validateWebhookTargetUrl`)**: Allows `http:`/`https:` URLs only, resolves hostnames via DNS (`dns/promises` `lookup`), and blocks `localhost`, `127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16` metadata ranges, and IPv6 ULA/link-local addresses whenever `NODE_ENV === 'production'` (loopback targets are allowed only in non-production environments for local integration tests).
 
 ## 6. Secrets & Repository Hygiene
 - `.env` and `dist/` are excluded via `.gitignore`; `.env.example` documents placeholder dev values only (`dev-jwt-secret-change-me`, `dev-webhook-secret`, empty `OPENROUTER_API_KEY`).
